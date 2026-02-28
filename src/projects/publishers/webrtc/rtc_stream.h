@@ -121,6 +121,7 @@ private:
 
 	bool _transport_cc_enabled	= false;
 	bool _remb_enabled			= false;
+	bool _h265_enabled			= false;
 
 	uint32_t _worker_count		= 0;
 

@@ -400,7 +400,20 @@ namespace pvd
 					return false;
 				}
 
-				switch (first_payload->GetCodec())
+				auto codec = first_payload->GetCodec();
+
+				if (codec == PayloadAttr::SupportCodec::H265)
+				{
+					auto &rtsp_pull_config = GetApplicationInfo().GetConfig().GetProviders().GetRtspPullProvider();
+					if (rtsp_pull_config.IsAcceptH265() == false)
+					{
+						logtw("%s - H265/HEVC stream detected but AcceptH265 is disabled in RtspPull config, ignoring track. Set <AcceptH265>true</AcceptH265> to enable.", GetName().CStr());
+						continue;
+					}
+					logti("%s - Detected RTSP video codec: H265", GetName().CStr());
+				}
+
+				switch (codec)
 				{
 					case PayloadAttr::SupportCodec::H264:
 					case PayloadAttr::SupportCodec::H265:

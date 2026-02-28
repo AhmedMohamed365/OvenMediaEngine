@@ -45,7 +45,7 @@ void PayloadAttr::SetRtpmap(const uint8_t payload_type, const ov::String &codec,
 	{
 		_codec = SupportCodec::H264;
 	}
-	else if(codec.LowerCaseString() == "h265")
+	else if(codec.LowerCaseString() == "h265" || codec.LowerCaseString() == "hevc")
 	{
 		_codec = SupportCodec::H265;
 	}

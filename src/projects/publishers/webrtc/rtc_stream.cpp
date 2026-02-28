@@ -151,6 +151,8 @@ bool RtcStream::Start()
 		_remb_enabled = true;
 	}
 
+	_h265_enabled = webrtc_config.IsH265Enabled();
+
 	// MSID
 	_msid										   = ov::Random::GenerateString(36);
 	_cname										   = ov::Random::GenerateString(16);
@@ -173,7 +175,14 @@ bool RtcStream::Start()
 
 		if (IsSupportedCodec(track->GetCodecId()) == false)
 		{
-			logti("RtcStream(%s/%s) - Ignore unsupported codec(%s)", GetApplication()->GetVHostAppName().CStr(), GetName().CStr(), cmn::GetCodecIdString(track->GetCodecId()));
+			if (track->GetCodecId() == cmn::MediaCodecId::H265)
+			{
+				logti("RtcStream(%s/%s) - H265/HEVC track ignored because EnableH265 is disabled in WebRTC config. Set <EnableH265>true</EnableH265> to enable.", GetApplication()->GetVHostAppName().CStr(), GetName().CStr());
+			}
+			else
+			{
+				logti("RtcStream(%s/%s) - Ignore unsupported codec(%s)", GetApplication()->GetVHostAppName().CStr(), GetName().CStr(), cmn::GetCodecIdString(track->GetCodecId()));
+			}
 			continue;
 		}
 
@@ -275,10 +284,11 @@ bool RtcStream::IsSupportedCodec(cmn::MediaCodecId codec_id)
 	switch (codec_id)
 	{
 		case cmn::MediaCodecId::H264:
-		case cmn::MediaCodecId::H265:
 		case cmn::MediaCodecId::Vp8:
 		case cmn::MediaCodecId::Opus:
 			return true;
+		case cmn::MediaCodecId::H265:
+			return _h265_enabled;
 		default:
 			return false;
 	}
