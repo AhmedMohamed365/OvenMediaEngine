@@ -157,6 +157,11 @@ Content-Type: application/json
 		the stream is deleted, but ignored if persistent is true
 	## ignoreRtcpSRTimestamp
 		No waits RTCP SR and start stream immediately
+	## retryCount
+		Number of reconnect attempts after pull failures.
+		- If omitted and `persistent=true`, OME keeps retrying indefinitely.
+		- If omitted and `persistent=false`, OME uses the vhost Origins/Properties RetryCount.
+		- Set to `0` to disable retries.
 ```
 
 </details>

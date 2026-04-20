@@ -11,7 +11,9 @@
 #include <base/provider/pull_provider/stream_props.h>
 #include <orchestrator/orchestrator.h>
 
+#include <cstdint>
 #include <functional>
+#include <limits>
 
 #include "../../../../../api_private.h"
 #include "stream_actions_controller.h"
@@ -78,6 +80,7 @@ namespace api
 				if (stream == nullptr)
 				{
 					auto properties = std::make_shared<pvd::PullStreamProperties>();
+					bool retry_count_specified = false;
 
 					if (jv_properties.isNull() == false && jv_properties.isObject())
 					{
@@ -104,14 +107,18 @@ namespace api
 						if (jv_properties["retryCount"].isNull() == false && jv_properties["retryCount"].isInt())
 						{
 							properties->SetRetryCount(jv_properties["retryCount"].asInt());
-						}
-						else
-						{
-							properties->SetRetryCount(0); 
+							retry_count_specified = true;
 						}
 					}
 
-					logti("Request to pull stream: %s/%s - persistent(%s) noInputFailoverTimeoutMs(%d) unusedStreamDeletionTimeoutMs(%d) ignoreRtcpSRTimestamp(%s)", app->GetVHostAppName().CStr(), stream_name.CStr(), properties->IsPersistent() ? "true" : "false", properties->GetNoInputFailoverTimeout(), properties->GetUnusedStreamDeletionTimeout(), properties->IsRtcpSRTimestampIgnored() ? "true" : "false");
+					// Persistent pull streams are expected to survive temporary source outages.
+					// If retryCount is omitted, keep retrying by default.
+					if (properties->IsPersistent() && (retry_count_specified == false))
+					{
+						properties->SetRetryCount(std::numeric_limits<int32_t>::max());
+					}
+
+					logti("Request to pull stream: %s/%s - persistent(%s) noInputFailoverTimeoutMs(%d) unusedStreamDeletionTimeoutMs(%d) ignoreRtcpSRTimestamp(%s) retryCount(%d)", app->GetVHostAppName().CStr(), stream_name.CStr(), properties->IsPersistent() ? "true" : "false", properties->GetNoInputFailoverTimeout(), properties->GetUnusedStreamDeletionTimeout(), properties->IsRtcpSRTimestampIgnored() ? "true" : "false", properties->GetRetryCount());
 					for (auto &url : request_urls)
 					{
 						logti(" - %s", url.CStr());

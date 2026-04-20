@@ -1647,15 +1647,22 @@ paths:
                   properties:
                     persistent:
                       type: boolean
+                      description: Keep this pull stream alive until it is explicitly deleted.
                     noInputFailoverTimeoutMs:
                       type: integer
                       format: int64
+                      description: Time in milliseconds to trigger failover/reconnect when input packets stop.
                     unusedStreamDeletionTimeoutMs:
                       type: integer
                       format: int64
+                      description: Time in milliseconds to delete an unused stream (ignored when persistent is true).
                     ignoreRtcpSRTimestamp:
+                      type: boolean
+                      description: If true, do not wait for RTCP SR before forwarding media.
+                    retryCount:
                       type: integer
-                      format: int64
+                      format: int32
+                      description: Number of reconnect/failover retries per URL. If omitted and persistent=true, retries are unbounded by default.
       responses:
         '200':
           $ref: '#/components/responses/Status'
