@@ -245,7 +245,10 @@ namespace pvd
 	std::shared_ptr<pvd::Stream> PullApplication::CreateStream(const ov::String &stream_name, const std::vector<ov::String> &url_list, const std::shared_ptr<pvd::PullStreamProperties> &properties)
 	{
 		auto global_retry_count = GetHostInfo().GetOrigins().GetProperties().GetRetryCount();
-		if (properties->GetRetryCount() <= 0)
+		// Preserve explicit retry settings:
+		// -1: infinite retry, 0: no retry, >0: fixed retry count.
+		// Apply global default only when retryCount is unset.
+		if (properties->IsRetryCountUnset())
 		{
 			properties->SetRetryCount(global_retry_count);
 		}

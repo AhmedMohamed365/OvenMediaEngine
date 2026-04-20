@@ -11,9 +11,7 @@
 #include <base/provider/pull_provider/stream_props.h>
 #include <orchestrator/orchestrator.h>
 
-#include <cstdint>
 #include <functional>
-#include <limits>
 
 #include "../../../../../api_private.h"
 #include "stream_actions_controller.h"
@@ -112,10 +110,10 @@ namespace api
 					}
 
 					// Persistent pull streams are expected to survive temporary source outages.
-					// If retryCount is omitted, keep retrying by default.
+					// If retryCount is omitted, retry indefinitely by default.
 					if (properties->IsPersistent() && (retry_count_specified == false))
 					{
-						properties->SetRetryCount(std::numeric_limits<int32_t>::max());
+						properties->SetRetryCount(-1);
 					}
 
 					logti("Request to pull stream: %s/%s - persistent(%s) noInputFailoverTimeoutMs(%d) unusedStreamDeletionTimeoutMs(%d) ignoreRtcpSRTimestamp(%s) retryCount(%d)", app->GetVHostAppName().CStr(), stream_name.CStr(), properties->IsPersistent() ? "true" : "false", properties->GetNoInputFailoverTimeout(), properties->GetUnusedStreamDeletionTimeout(), properties->IsRtcpSRTimestampIgnored() ? "true" : "false", properties->GetRetryCount());

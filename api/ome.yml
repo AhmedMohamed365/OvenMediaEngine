@@ -1662,7 +1662,7 @@ paths:
                     retryCount:
                       type: integer
                       format: int32
-                      description: Number of reconnect/failover retries per URL. If omitted and persistent=true, retries are unbounded by default.
+                      description: Number of reconnect/failover retries per URL. Use -1 for infinite retries. If omitted and persistent=true, defaults to -1.
       responses:
         '200':
           $ref: '#/components/responses/Status'

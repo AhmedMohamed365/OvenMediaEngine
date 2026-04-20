@@ -7,6 +7,7 @@
 //
 //==============================================================================
 #pragma once
+#include <cstdint>
 #include "../../ovlibrary/string.h"
 
 namespace pvd
@@ -86,6 +87,16 @@ namespace pvd
 			return _retry_count;
 		}
 
+		bool IsRetryCountUnset()
+		{
+			return _retry_count == RetryCountUnset();
+		}
+
+		bool IsInfiniteRetryCount()
+		{
+			return _retry_count == InfiniteRetryCount();
+		}
+
 		void SetRetryCount(int32_t retry_connect_count) 
 		{
 			_retry_count = retry_connect_count;
@@ -123,17 +134,31 @@ namespace pvd
 		}
 
 	private:
+		static constexpr int32_t RetryCountUnset()
+		{
+			return -2;
+		}
+
+		static constexpr int32_t InfiniteRetryCount()
+		{
+			return -1;
+		}
+
 		bool _persistent = false;
 		bool _failback = false;
 		bool _relay = false;
 		bool _from_origin_map_store = false;
 		bool _ignore_rtcp_sr_timestamp = false;
 
-		// -1 means that the values in configuration file will be used. (Conf/Origins/Properties)
+		// RetryCount semantics:
+		//  -2: unset (inherit from Conf/Origins/Properties)
+		//  -1: infinite retry
+		//   0: no retry
+		//  >0: retry count
 		int32_t _failback_timeout = -1;
 		int32_t _no_input_failover_timeout = -1;
 		int32_t _unused_stream_deletion_timeout = -1;
-		int32_t _retry_count = -1; 
+		int32_t _retry_count = RetryCountUnset(); 
 
 	public:
 		// The last checked time is saved for failback.
