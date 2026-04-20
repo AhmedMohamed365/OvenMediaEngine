@@ -69,7 +69,8 @@ These are the types of hardware accelerators officially supported.
 * NVIDIA GPU
 * Xilinx Alveo U30 MA <sub><mark style="color:blue;">enterpise only<mark style="color:blue;"></sub>
 * NILOGAN <sub><mark style="color:blue;">experiment<mark style="color:blue;"></sub>
-* Quick Sync Video <sub><mark style="color:orange;">deprecated<mark style="color:orange;"></sub>
+
+
 
 
 

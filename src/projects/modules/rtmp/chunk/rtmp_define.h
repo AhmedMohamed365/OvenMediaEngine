@@ -312,7 +312,6 @@ public:
 	int audio_channels = 0;
 	int audio_bits = 0;
 	int audio_samplerate = 0;
-	int audio_sampleindex = 0;
 	int audio_bitrate = 0;
 
 	uint32_t timestamp_scale = RTMP_TIME_SCALE;

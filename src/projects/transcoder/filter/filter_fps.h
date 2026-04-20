@@ -37,6 +37,7 @@ public:
 
 	double GetOutputFramesPerSecond() const;
 	double GetExpectedOutputFramesPerSecond() const;
+	double GetInputFramesPerSecond() const;
 
 	ov::String GetStatsString();
 	ov::String GetInfoString();
@@ -52,7 +53,11 @@ public:
 	{
 		_output_frame_copy_mode = mode;
 	}
-	
+
+
+	static const int32_t SkipFramesDisabled = -1;
+	static const int32_t SkipFramesMin		= 0;
+
 private:
 	cmn::Timebase _input_timebase;
 	double _input_framerate;
@@ -63,9 +68,10 @@ private:
 	// Prevents the frame from being duplicated indefinitely.
 	int32_t _max_dupulicate_frames = 5;
 
-	// The number of frames to skip based on the output framerate
-	// If 0, do not skip
-	int32_t _skip_frames = 0;
+	// Skip frames configuration
+	// -1: disabled
+	// >=0: the number of frames to skip (e.g., 0 means no skip, 1 means skip 1 frame after every output frame)
+	int32_t _skip_frames = SkipFramesDisabled;
 	
 	// Buffer for storing frames
 	std::vector<std::shared_ptr<MediaFrame>> _frames;
@@ -86,8 +92,14 @@ private:
 	int64_t _stat_skip_frame_count			= 0;
 	int64_t _stat_duplicate_frame_count		= 0;
 	int64_t _stat_discard_frame_count		= 0;
+
+	// Wall-clock based actual output frame rate (frames popped per second, skipped frames excluded)
 	int64_t _last_stat_output_frame_count	= 0;
 	double _stat_output_frame_per_second	= 0.0f;
+
+	// Wall-clock based actual input frame rate (frames pushed per second)
+	int64_t _stat_last_input_frame_count	= 0;
+	double  _stat_input_frame_per_second	= 0.0;
 
 	ov::StopWatch _timer;
 

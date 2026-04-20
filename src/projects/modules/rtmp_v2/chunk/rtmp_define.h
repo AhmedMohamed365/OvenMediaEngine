@@ -318,7 +318,6 @@ namespace modules::rtmp
 		std::optional<cmn::AudioChannel::Layout> channel_layout;
 		std::optional<int> bits;
 		std::optional<int> samplerate;
-		std::optional<int> sampleindex;
 		std::optional<int> bitrate;
 
 		void Reset() override
@@ -327,7 +326,6 @@ namespace modules::rtmp
 			channel_layout.reset();
 			bits.reset();
 			samplerate.reset();
-			sampleindex.reset();
 			bitrate.reset();
 		}
 	};

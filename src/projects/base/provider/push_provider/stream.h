@@ -9,7 +9,6 @@
 
 #pragma once
 
-#include <base/ovlibrary/stop_watch.h>
 #include "base/provider/stream.h"
 
 namespace pvd
@@ -85,10 +84,10 @@ namespace pvd
 		// Published?
 		bool			_is_published = false;
 		// Time elapsed since the last OnDataReceived function was called
-		ov::StopWatch 	_packet_silence_timer;
-		time_t			_packet_silence_timeout_ms = 0;
+		std::atomic<int64_t> _last_received_time_ms = -1;
+		std::atomic<time_t> _packet_silence_timeout_ms = 0;
 
-		uint32_t		_attemps_publish_count = 0;
+		std::atomic<uint32_t> _attemps_publish_count   = 0;
 
 		// Push Provider
 		std::shared_ptr<PushProvider>	_provider;

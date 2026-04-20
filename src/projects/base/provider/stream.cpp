@@ -79,9 +79,14 @@ namespace pvd
 	// Consider the reconnection time and add it to the base timestamp
 	void Stream::UpdateReconnectTimeToBasetime()
 	{
-		if (_last_pkt_received_time != std::chrono::time_point<std::chrono::system_clock>::min())
+		std::scoped_lock lock(_source_stream_timestamp_mutex);
+
+		auto last_pkt_received_time_us = _last_pkt_received_time_us.load();
+		if (last_pkt_received_time_us >= 0)
 		{
-			auto reconnection_time_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - _last_pkt_received_time).count();
+			auto current_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::system_clock::now().time_since_epoch()).count();
+			auto reconnection_time_us = current_time_us - last_pkt_received_time_us;
 
 			logti("Time taken to reconnect is %" PRId64 " milliseconds. add to the basetime", reconnection_time_us/1000);
 
@@ -101,6 +106,8 @@ namespace pvd
 
 	int64_t Stream::GetCurrentTimestampMs()
 	{
+		std::lock_guard<std::mutex> lock(_timestamp_mutex);
+
 		// Not yet started
 		if (_last_media_timestamp_ms == -1)
 		{
@@ -337,7 +344,8 @@ namespace pvd
 		// Statistics
 		MonitorInstance->IncreaseBytesIn(*GetSharedPtrAs<info::Stream>(), packet->GetDataLength());
 
-		_last_pkt_received_time = std::chrono::system_clock::now();
+		_last_pkt_received_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::system_clock::now().time_since_epoch()).count();
 
 		auto master_clock_track = GetMediaTrackByOrder(cmn::MediaType::Video, 0);
 		if (master_clock_track == nullptr)
@@ -347,6 +355,7 @@ namespace pvd
 
 		if (master_clock_track != nullptr && packet->GetTrackId() == master_clock_track->GetId())
 		{
+			std::lock_guard<std::mutex> lock(_timestamp_mutex);
 			_last_media_timestamp_ms = packet->GetPts() / GetTrack(packet->GetTrackId())->GetTimeBase().GetTimescale() * 1000.0;
 			_elapsed_from_last_media_timestamp.Restart();
 		}
@@ -368,6 +377,8 @@ namespace pvd
 
 	void Stream::ResetSourceStreamTimestamp()
 	{
+		std::scoped_lock lock(_source_stream_timestamp_mutex);
+
 		// Set the last timestamp of the highest value of all tracks
 		// In this algorithm, the timestamp of A or V jumps for synchronization.
 		// But after testing with a variety of players, this is better.
@@ -380,9 +391,10 @@ namespace pvd
 				continue;
 			}
 
-			int64_t last_duration = _last_duration_us_map.find(track_id) != _last_duration_us_map.end() ? _last_duration_us_map[track_id] : 0;
-			last_timestamp = std::max<int64_t>(timestamp + last_duration, last_timestamp);
-		}	
+			const auto last_duration_it = _last_duration_us_map.find(track_id);
+			int64_t last_duration		= (last_duration_it != _last_duration_us_map.end()) ? last_duration_it->second : 0;
+			last_timestamp				= std::max<int64_t>(timestamp + last_duration, last_timestamp);
+		}
 
 		if (last_timestamp != std::numeric_limits<int64_t>::min())
 		{
@@ -440,17 +452,17 @@ namespace pvd
 					_rtp_timestamp_method = RtpTimestampCalculationMethod::WITH_RTCP_SR;
 				}
 				// If it exceeds 5 seconds, it is calculated independently without RTCP SR.
-				else if (_rtp_lip_sync_clock.IsEnabled() == false && _first_rtp_received_time.Elapsed() > 5000)
+				else if (_rtp_lip_sync_clock.IsEnabled() == false && _first_rtp_received_time.Elapsed() > 3000)
 				{
-					logtw("Since the RTCP SR was not received within 5 seconds, the PTS is calculated for each track without RTCP SR. (Lip-Sync may be out of sync)");
+					logtw("Since the RTCP SR was not received within 3 seconds, the PTS is calculated for each track without RTCP SR. (Lip-Sync may be out of sync)");
 					_rtp_timestamp_method = RtpTimestampCalculationMethod::SINGLE_DELTA;
 				}
-				else if (_rtp_lip_sync_clock.IsEnabled() == false && _first_rtp_received_time.Elapsed() <= 5000)
+				else if (_rtp_lip_sync_clock.IsEnabled() == false && _first_rtp_received_time.Elapsed() <= 3000)
 				{
-					// Wait for RTCP SR for 5 seconds
+					// Wait for RTCP SR for 3 seconds
 					if (_first_rtp_received_time.IsStart() == false)
 					{
-						logtw("Wait for RTCP SR for 5 seconds before starting the stream.");
+						logtw("Wait for RTCP SR for 3 seconds before starting the stream.");
 						_first_rtp_received_time.Start();
 					}
 					return false; 
@@ -504,6 +516,8 @@ namespace pvd
 		// instead of dividing in `track_scale`, `num_tb` is multiplied in `us_scale`.
 		const auto us_scale					 = AV_TIME_BASE * num_tb;
 		const auto &track_scale				 = den_tb;	// An alias of `den_tb` for clarity
+
+		std::scoped_lock lock(_source_stream_timestamp_mutex);
 
 		// 1. Get the start timestamp and base timebase of this stream.
 		if (_start_timestamp_us == -1LL)
@@ -629,9 +643,12 @@ namespace pvd
 		}
 
 		int64_t base_timestamp = 0;
-		if (_base_timestamp_us != -1)
 		{
-			base_timestamp = _base_timestamp_us;
+			std::scoped_lock lock(_source_stream_timestamp_mutex);
+			if (_base_timestamp_us != -1)
+			{
+				base_timestamp = _base_timestamp_us;
+			}
 		}
 
 		auto base_timestamp_tb = (base_timestamp * track->GetTimeBase().GetTimescale() / 1000000);
@@ -642,6 +659,8 @@ namespace pvd
 	// This is a method of generating a PTS with an increment value (delta) when it cannot be used as a PTS because the start value of the timestamp is random like the RTP timestamp.
 	int64_t Stream::AdjustTimestampByDelta(uint32_t track_id, int64_t timestamp, int64_t max_timestamp)
 	{
+		std::scoped_lock lock(_source_stream_timestamp_mutex);
+
 		int64_t curr_timestamp;
 
 		if (_last_timestamp_us_map.find(track_id) == _last_timestamp_us_map.end())
@@ -663,8 +682,6 @@ namespace pvd
 
 	int64_t Stream::GetDeltaTimestamp(uint32_t track_id, int64_t timestamp, int64_t max_timestamp)
 	{
-		auto track = GetTrack(track_id);
-
 		// First timestamp
 		if (_source_timestamp_map.find(track_id) == _source_timestamp_map.end())
 		{

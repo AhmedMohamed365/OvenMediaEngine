@@ -55,13 +55,13 @@ MediaRouteApplication::MediaRouteApplication(const info::Application &applicatio
 	{
 		{
 			auto urn = std::make_shared<info::ManagedQueue::URN>(_application_info.GetVHostAppName(), nullptr, "imr", ov::String::FormatString("aw_%d", worker_id));
-			auto stream_data = std::make_shared<ov::ManagedQueue<std::shared_ptr<MediaRouteStream>>>(urn, 1000);
+			auto stream_data = std::make_shared<ov::ManagedQueue<std::weak_ptr<MediaRouteStream>>>(urn, 1000);
 			_inbound_stream_indicator.push_back(stream_data);
 		}
 
 		{
 			auto urn = std::make_shared<info::ManagedQueue::URN>(_application_info.GetVHostAppName(), nullptr, "omr", ov::String::FormatString("aw_%d", worker_id));
-			auto stream_data = std::make_shared<ov::ManagedQueue<std::shared_ptr<MediaRouteStream>>>(urn, 1000);
+			auto stream_data = std::make_shared<ov::ManagedQueue<std::weak_ptr<MediaRouteStream>>>(urn, 1000);
 			stream_data->SetBufferingDelay(delay_buffer_time_ms);
 			_outbound_stream_indicator.push_back(stream_data);
 		}
@@ -339,7 +339,7 @@ bool MediaRouteApplication::OnStreamCreated(const std::shared_ptr<MediaRouterApp
 		return false;
 	}
 
-	logti("[%s/%s(%u)] Trying to create a stream", _application_info.GetVHostAppName().CStr(), stream_info->GetName().CStr(), stream_info->GetId());
+	logti("[%s/%s(%u)] %sTrying to create a stream", _application_info.GetVHostAppName().CStr(), stream_info->GetName().CStr(), stream_info->GetId(), stream_info->IsInternal() ? "[Internal] " : "");
 
 	auto connector_type = app_conn->GetConnectorType();
 	auto representation_type = stream_info->GetRepresentationType();
@@ -455,7 +455,12 @@ bool MediaRouteApplication::NotifyStreamCreate(const std::shared_ptr<info::Strea
 	auto observers = _observers; // Avoid deadlock
 	lock.unlock();
 
-	logti("[%s/%s(%u)] Stream has been created", _application_info.GetVHostAppName().CStr(), stream_info->GetName().CStr(), stream_info->GetId());
+	logti("[%s/%s(%u)] %sStream has been created", _application_info.GetVHostAppName().CStr(), stream_info->GetName().CStr(), stream_info->GetId(), stream_info->IsInternal() ? "[Internal] " : "");
+
+	if (stream_info->IsInternal())
+	{
+		return true;
+	}
 
 	auto representation_type = stream_info->GetRepresentationType();
 
@@ -494,7 +499,13 @@ bool MediaRouteApplication::NotifyStreamPrepared(std::shared_ptr<MediaRouteStrea
 	auto observers = _observers;  // Avoid deadlock
 	lock.unlock();
 
-	logti("[%s/%s(%u)] Stream has been prepared %s", _application_info.GetVHostAppName().CStr(), stream->GetStream()->GetName().CStr(), stream->GetStream()->GetId(), stream->GetStream()->GetInfoString().CStr());
+	logti("[%s/%s(%u)] %sStream has been prepared %s", _application_info.GetVHostAppName().CStr(), stream->GetStream()->GetName().CStr(), stream->GetStream()->GetId(), stream->GetStream()->IsInternal() ? "[Internal] " : "", stream->GetStream()->GetInfoString().CStr());
+
+	if (stream->GetStream()->IsInternal())
+	{
+		stream->OnStreamPrepared(true);
+		return true;
+	}
 
 	for (auto observer : observers)
 	{
@@ -534,7 +545,7 @@ bool MediaRouteApplication::NotifyStreamPrepared(std::shared_ptr<MediaRouteStrea
 
 bool MediaRouteApplication::OnStreamUpdated(const std::shared_ptr<MediaRouterApplicationConnector> &app_conn, const std::shared_ptr<info::Stream> &stream_info)
 {
-	logti(" [%s/%s(%u)] Trying to update a stream", _application_info.GetVHostAppName().CStr(), stream_info->GetName().CStr(), stream_info->GetId());
+	logti(" [%s/%s(%u)] %sTrying to update a stream", _application_info.GetVHostAppName().CStr(), stream_info->GetName().CStr(), stream_info->GetId(), stream_info->IsInternal() ? "[Internal] " : "");
 
 	if (!app_conn || !stream_info)
 	{
@@ -565,6 +576,10 @@ bool MediaRouteApplication::OnStreamUpdated(const std::shared_ptr<MediaRouterApp
 		if (stream)
 		{
 			//stream->Flush();
+			if (stream->IsStreamPrepared() == false && stream->IsStreamReady() == true)
+			{
+				NotifyStreamPrepared(stream);
+			}
 		}
 	}
 	else
@@ -583,7 +598,7 @@ bool MediaRouteApplication::OnStreamUpdated(const std::shared_ptr<MediaRouterApp
 
 bool MediaRouteApplication::OnStreamDeleted(const std::shared_ptr<MediaRouterApplicationConnector> &app_conn, const std::shared_ptr<info::Stream> &stream_info)
 {
-	logti("[%s/%s(%u)] Trying to delete a stream", _application_info.GetVHostAppName().CStr(), stream_info->GetName().CStr(), stream_info->GetId());
+	logti("[%s/%s(%u)] %sTrying to delete a stream", _application_info.GetVHostAppName().CStr(), stream_info->GetName().CStr(), stream_info->GetId(), stream_info->IsInternal() ? "[Internal] " : "");
 
 	if (!app_conn || !stream_info)
 	{
@@ -663,6 +678,11 @@ bool MediaRouteApplication::NotifyStreamDeleted(const std::shared_ptr<info::Stre
 
 	auto representation_type = stream_info->GetRepresentationType();
 
+	if (stream_info->IsInternal())
+	{
+		return true;
+	}
+
 	for (auto it = observers.begin(); it != observers.end(); ++it)
 	{
 		auto observer = *it;
@@ -708,6 +728,11 @@ bool MediaRouteApplication::NotifyStreamUpdated(const std::shared_ptr<info::Stre
 	lock_guard.unlock();
 
 	auto representation_type = stream_info->GetRepresentationType();
+
+	if (stream_info->IsInternal())
+	{
+		return true;
+	}
 
 	for (auto it = observers.begin(); it != observers.end(); ++it)
 	{
@@ -770,7 +795,7 @@ bool MediaRouteApplication::OnPacketReceived(const std::shared_ptr<MediaRouterAp
 
 		stream->Push(packet);
 
-		_inbound_stream_indicator[GetWorkerIDByStreamID(stream_info->GetId())]->Enqueue(stream, packet->IsHighPriority());
+		_inbound_stream_indicator[GetWorkerIDByStreamID(stream_info->GetId())]->Enqueue(std::weak_ptr<MediaRouteStream>(stream), packet->IsHighPriority());
 	}
 	// Provider(relay), Transcoder => Outbound Stream
 	else if ((IS_CONNECTOR_PROVIDER(connector_type) && IS_REPRENT_RELAY(representation_type)) ||
@@ -784,7 +809,7 @@ bool MediaRouteApplication::OnPacketReceived(const std::shared_ptr<MediaRouterAp
 
 		stream->Push(packet);
 
-		_outbound_stream_indicator[GetWorkerIDByStreamID(stream_info->GetId())]->Enqueue(stream, packet->IsHighPriority());
+		_outbound_stream_indicator[GetWorkerIDByStreamID(stream_info->GetId())]->Enqueue(std::weak_ptr<MediaRouteStream>(stream), packet->IsHighPriority());
 	}
 	else
 	{
@@ -889,10 +914,10 @@ void MediaRouteApplication::InboundWorkerThread(uint32_t worker_id)
 			continue;
 		}
 
-		auto stream = msg.value();
+		auto stream = msg.value().lock();
 		if (stream == nullptr)
 		{
-			logtw("Not found stream info");
+			// Stream was already destroyed.
 			continue;
 		}
 
@@ -975,10 +1000,10 @@ void MediaRouteApplication::OutboundWorkerThread(uint32_t worker_id)
 			// It may be called due to a normal stop signal.
 			continue;
 		}
-		auto stream = msg.value();
+		auto stream = msg.value().lock();
 		if (stream == nullptr)
 		{
-			logtw("Not found stream info");
+			// Stream was already destroyed (e.g. deleted while packets were buffered in delay queue).
 			continue;
 		}
 

@@ -427,12 +427,12 @@ static ov::String StringFromStreamSourceType(const StreamSourceType &type)
 			return "SRT";
 		case StreamSourceType::Mpegts:
 			return "MPEGTS";
-		case StreamSourceType::File:
-			return "File";
 		case StreamSourceType::Scheduled:
 			return "Scheduled";
 		case StreamSourceType::Multiplex:
 			return "Multiplex";
+		case StreamSourceType::File:
+			return "File";
 	}
 
 	return "Unknown";
@@ -472,7 +472,7 @@ static ov::String StringFromProviderType(const ProviderType &type)
 		case ProviderType::Srt:
 			return "SRT";
 		case ProviderType::File:
-			return "File";
+			return "File";			
 		case ProviderType::Scheduled:
 			return "Scheduled";
 		case ProviderType::Multiplex:

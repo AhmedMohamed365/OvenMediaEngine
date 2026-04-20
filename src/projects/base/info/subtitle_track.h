@@ -37,17 +37,34 @@ public:
 	void SetOutputLabel(const ov::String &label);
 	ov::String GetOutputTrackLabel() const;
 
-protected:
+        void SetStepMs(int32_t step_ms);
+        int32_t GetStepMs() const;
+
+        void SetLengthMs(int32_t length_ms);
+        int32_t GetLengthMs() const;
+
+        void SetKeepMs(int32_t keep_ms);
+        int32_t GetKeepMs() const;
+
+	void SetSttEnabled(bool enabled);
+	bool IsSttEnabled() const;
+
+	mutable std::shared_mutex _subtitle_mutex;
+
 	// For subtitle 
-	bool _auto_select = false;
-	bool _default = false;
-	bool _forced = false;
+	std::atomic<bool> _auto_select = false;
+	std::atomic<bool> _default = false;
+	std::atomic<bool> _forced = false;
 
 	// AI Modules
 	// e.g. Speech to Text
 	ov::String _engine = "whisper"; // Whisper
 	ov::String _model = "small"; // tiny, base, small, medium, large
 	ov::String _source_language = "auto"; // input language
-	bool _translation = false; // whisper only supports english translation
+	std::atomic<bool> _translation = false; // whisper only supports english translation
 	ov::String _output_track_label = ""; // input audio track label for speech to text
+	std::atomic<int32_t> _step_ms = 2000;
+	std::atomic<int32_t> _length_ms = 10000;
+	std::atomic<int32_t> _keep_ms = 1500;
+	std::atomic<bool> _stt_enabled = true;
 };

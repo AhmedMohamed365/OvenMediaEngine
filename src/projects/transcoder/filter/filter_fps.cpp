@@ -17,7 +17,7 @@ FilterFps::FilterFps()
 {
 	_input_framerate = 0;
 	_output_framerate = 0;
-	_skip_frames = 0;
+	_skip_frames = SkipFramesDisabled; 
 
 	_curr_pts = AV_NOPTS_VALUE;
 	_next_pts = AV_NOPTS_VALUE;
@@ -89,6 +89,10 @@ double FilterFps::GetOutputFrameRate() const
 void FilterFps::SetSkipFrames(int32_t skip_frames)
 {
 	_skip_frames = skip_frames;
+	if(_skip_frames < 0)
+	{
+		_skip_frames = -1;
+	}
 }
 
 int32_t FilterFps::GetSkipFrames() const
@@ -161,7 +165,7 @@ std::shared_ptr<MediaFrame> FilterFps::Pop()
 
 		// Skip Frame
 		_stat_ideal_output_frame_count++;
-		if ((_skip_frames > 0) && (_stat_ideal_output_frame_count % (_skip_frames + 1) != 0))
+		if ((_skip_frames > SkipFramesMin) && (_stat_ideal_output_frame_count % (_skip_frames + 1) != 0))
 		{
 			_stat_skip_frame_count++;
 			continue;
@@ -173,9 +177,9 @@ std::shared_ptr<MediaFrame> FilterFps::Pop()
 													 (AVRational){_input_timebase.GetNum(), _input_timebase.GetDen()},
 													 (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
 
-		// Calculate the PTS of the next frame considering the Skip Frame.
-		// Purpose of calculating the Duration of the current frame
-		int64_t next_timebase_pts = av_rescale_q_rnd(_next_pts + _skip_frames,
+		// Calculate the next frame's PTS based on _skip_frames.
+		int64_t delta = (_skip_frames <= SkipFramesMin) ? 0 : _skip_frames;
+		int64_t next_timebase_pts = av_rescale_q_rnd(_next_pts + delta,
 													 av_inv_q(av_d2q(_output_framerate, INT_MAX)),
 													 (AVRational){_input_timebase.GetNum(), _input_timebase.GetDen()},
 													 (AVRounding)(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
@@ -185,6 +189,8 @@ std::shared_ptr<MediaFrame> FilterFps::Pop()
 
 		int64_t duration = next_timebase_pts - curr_timebase_pts;
 		pop_frame->SetDuration(duration);
+
+		_stat_actual_output_frame_count = _stat_ideal_output_frame_count - _stat_skip_frame_count;
 
 		// Update FPS statistics every second
 		if (_timer.IsStart() == false)
@@ -196,16 +202,13 @@ std::shared_ptr<MediaFrame> FilterFps::Pop()
 			int elapsed_time = _timer.Elapsed();
 			_timer.Update();
 
-			_stat_actual_output_frame_count = _stat_ideal_output_frame_count - _stat_skip_frame_count;
-
-			// Calculate actual output frames per second
+			// Calculate actual output frames per second (wall-clock based, skipped frames excluded)
 			_stat_output_frame_per_second = (double)(_stat_actual_output_frame_count - _last_stat_output_frame_count) * (1000.0 / (double)elapsed_time);
-			
-			// logtt("stat: skip_frames:%d, ideal_output_frames:%" PRId64 ", actual_output_frames:%" PRId64 ", curr_fps:%.2f, average_fps:%.2f", 
-			// 	_skip_frames, _stat_ideal_output_frame_count, _stat_actual_output_frame_count, _stat_output_frame_per_second, 
-			// 	_stat_ideal_output_frame_count / (_timer.TotalElapsed() / 1000));
-
 			_last_stat_output_frame_count = _stat_actual_output_frame_count;
+
+			// Calculate actual input frames per second (wall-clock based)
+			_stat_input_frame_per_second = (double)(_stat_input_frame_count - _stat_last_input_frame_count) * (1000.0 / (double)elapsed_time);
+			_stat_last_input_frame_count = _stat_input_frame_count;
 		}
 
 		return pop_frame;
@@ -219,9 +222,14 @@ double FilterFps::GetOutputFramesPerSecond() const
 	return _stat_output_frame_per_second;
 }
 
+double FilterFps::GetInputFramesPerSecond() const
+{
+	return _stat_input_frame_per_second;
+}
+
 double FilterFps::GetExpectedOutputFramesPerSecond() const
 {
-	if (_skip_frames < 0)
+	if (_skip_frames <= SkipFramesMin)
 	{
 		return _output_framerate;
 	}
