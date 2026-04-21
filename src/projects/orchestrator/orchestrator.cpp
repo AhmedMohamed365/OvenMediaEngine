@@ -68,6 +68,55 @@ namespace ocst
 		return ov::String::FormatString("%s/%s", vhost_app_name.CStr(), stream_name.CStr());
 	}
 
+	void Orchestrator::RegisterRestPersistentPull(
+		const info::VHostAppName &vhost_app_name,
+		const ov::String &stream_name,
+		const std::vector<ov::String> &url_list)
+	{
+		auto key = MakeAppStreamKey(vhost_app_name, stream_name);
+		std::lock_guard<std::shared_mutex> lock(_rest_persistent_pulls_mutex);
+		_rest_persistent_pulls[key] = url_list;
+	}
+
+	void Orchestrator::UnregisterRestPersistentPull(
+		const info::VHostAppName &vhost_app_name,
+		const ov::String &stream_name)
+	{
+		auto key = MakeAppStreamKey(vhost_app_name, stream_name);
+		std::lock_guard<std::shared_mutex> lock(_rest_persistent_pulls_mutex);
+		_rest_persistent_pulls.erase(key);
+	}
+
+	std::optional<std::vector<ov::String>> Orchestrator::GetRestPersistentPullUrls(
+		const info::VHostAppName &vhost_app_name,
+		const ov::String &stream_name) const
+	{
+		auto key = MakeAppStreamKey(vhost_app_name, stream_name);
+		std::shared_lock<std::shared_mutex> lock(_rest_persistent_pulls_mutex);
+		auto it = _rest_persistent_pulls.find(key);
+		if (it == _rest_persistent_pulls.end())
+		{
+			return std::nullopt;
+		}
+		return it->second;
+	}
+
+	std::vector<ov::String> Orchestrator::ListRestPersistentPulls(const info::VHostAppName &vhost_app_name) const
+	{
+		std::vector<ov::String> result;
+		auto prefix = ov::String::FormatString("%s/", vhost_app_name.CStr());
+
+		std::shared_lock<std::shared_mutex> lock(_rest_persistent_pulls_mutex);
+		for (const auto &kv : _rest_persistent_pulls)
+		{
+			if (kv.first.Left(prefix.GetLength()) == prefix)
+			{
+				result.push_back(kv.first.SubString(prefix.GetLength()));
+			}
+		}
+		return result;
+	}
+
 	bool Orchestrator::IsExplicitlyDeleted(const info::VHostAppName &vhost_app_name, const ov::String &stream_name) const
 	{
 		auto key = MakeAppStreamKey(vhost_app_name, stream_name);
@@ -512,6 +561,17 @@ namespace ocst
 			return validation_error;
 		}
 
+		// OriginMap-like behavior for REST/API-created persistent pulls: persist the
+		// stream definition (name -> URL list) so publishers can re-pull on demand
+		// even if the runtime stream instance is later terminated due to origin issues.
+		//
+		// NOTE: We intentionally do NOT clear this on origin failures; it is only
+		// removed on explicit DELETE /streams.
+		if (properties && properties->IsPersistent() && (!properties->IsFromOriginMapStore()))
+		{
+			RegisterRestPersistentPull(vhost_app_name, stream_name, url_list);
+		}
+
 		auto app_info = info::Application::GetInvalidApplication();
 		// Check if the application does exists
 		app_info	  = GetApplicationInfo(vhost_app_name);
@@ -697,6 +757,14 @@ namespace ocst
 	/// Delete PullStream
 	CommonErrorCode Orchestrator::TerminateStream(const info::VHostAppName &vhost_app_name, const ov::String &stream_name)
 	{
+		return TerminateStream(vhost_app_name, stream_name, true);
+	}
+
+	CommonErrorCode Orchestrator::TerminateStream(
+		const info::VHostAppName &vhost_app_name,
+		const ov::String &stream_name,
+		bool mark_explicitly_deleted)
+	{
 		auto stream = GetProviderStream(vhost_app_name, stream_name);
 		if (stream == nullptr)
 		{
@@ -708,8 +776,11 @@ namespace ocst
 			return CommonErrorCode::ERROR;
 		}
 
-		// Prevent auto re-pull via OriginMap until explicitly created again.
-		MarkExplicitlyDeleted(vhost_app_name, stream_name);
+		// Only block OriginMap auto re-pull when explicitly deleted via REST.
+		if (mark_explicitly_deleted)
+		{
+			MarkExplicitlyDeleted(vhost_app_name, stream_name);
+		}
 
 		return CommonErrorCode::SUCCESS;
 	}

@@ -14,6 +14,9 @@
 #include "provider_private.h"
 #include "stream_props.h"
 
+#include <chrono>
+#include <thread>
+
 namespace pvd
 {
 	PullStream::PullStream(const std::shared_ptr<pvd::Application> &application, const info::Stream &stream_info, const std::vector<ov::String> &url_list, const std::shared_ptr<pvd::PullStreamProperties> &properties)
@@ -44,15 +47,25 @@ namespace pvd
 	{
 		std::lock_guard<std::mutex> lock(_start_stop_stream_lock);
 		_restart_count = 0;
+		const bool is_persistent = (_properties != nullptr) && _properties->IsPersistent();
 		while (true)
 		{
 			if (StartStream(GetNextURL()) == false)
 			{
 				_restart_count++;
-				if (_restart_count > (_url_list.size() * _properties->GetRetryCount()))
+				// For non-persistent streams, respect retry budget and terminate.
+				// For persistent streams, never enter TERMINATED due to retry exhaustion;
+				// keep the stream registered so it can recover when the origin returns.
+				if ((!is_persistent) && (_restart_count > (_url_list.size() * _properties->GetRetryCount())))
 				{
 					SetState(Stream::State::TERMINATED);
 					return false;
+				}
+
+				if (is_persistent)
+				{
+					// Avoid a busy-loop when the origin is down.
+					std::this_thread::sleep_for(std::chrono::milliseconds(500));
 				}
 			}
 			else
@@ -75,7 +88,8 @@ namespace pvd
 
 	bool PullStream::Resume()
 	{
-		if (_properties->GetRetryCount() <= 0)
+		const bool is_persistent = (_properties != nullptr) && _properties->IsPersistent();
+		if ((_properties->GetRetryCount() <= 0) && (!is_persistent))
 		{
 			SetState(Stream::State::TERMINATED);
 			return false;
@@ -85,10 +99,17 @@ namespace pvd
 		{
 			Stop();
 			_restart_count++;
-			if (_restart_count > _url_list.size() * _properties->GetRetryCount())
+			if ((!is_persistent) && (_restart_count > _url_list.size() * _properties->GetRetryCount()))
 			{
 				// If the stream state is TERMINATED, it will be deleted by the StreamMotor
 				SetState(Stream::State::TERMINATED);
+			}
+			else if (is_persistent)
+			{
+				// For persistent streams keep retrying. Ensure the stream does not get
+				// deleted by collector logic that removes TERMINATED streams.
+				SetState(Stream::State::ERROR);
+				std::this_thread::sleep_for(std::chrono::milliseconds(500));
 			}
 
 			return false;

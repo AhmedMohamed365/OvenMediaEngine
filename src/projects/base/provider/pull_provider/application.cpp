@@ -71,13 +71,39 @@ namespace pvd
 
 				if (stream->GetState() == Stream::State::STOPPED || stream->GetState() == Stream::State::ERROR)
 				{
-					// Retry
-					ResumeStream(stream);
+					auto props = stream->GetProperties();
+					const bool is_persistent = props && props->IsPersistent();
+
+					if (is_persistent)
+					{
+						// For persistent pulls, a broken runtime instance can keep WebRTC clients
+						// stuck "loading". Delete the runtime stream, but keep the persistent
+						// definition (name -> URL list) so it can be pulled on-demand.
+						DeleteStream(stream);
+					}
+					else
+					{
+						// Retry
+						ResumeStream(stream);
+					}
 				}
 				else if (stream->GetState() == Stream::State::TERMINATED)
 				{
-					// Tried several times, but if unsuccessful, delete it completely.
-					DeleteStream(stream);
+					auto props = stream->GetProperties();
+					const bool is_persistent = props && props->IsPersistent();
+
+					if (is_persistent)
+					{
+						// Persistent streams must stay registered so they can recover when the
+						// origin returns. Never delete them just because the current retry
+						// budget was exceeded.
+						ResumeStream(stream);
+					}
+					else
+					{
+						// Tried several times, but if unsuccessful, delete it completely.
+						DeleteStream(stream);
+					}
 				}
 				else
 				{

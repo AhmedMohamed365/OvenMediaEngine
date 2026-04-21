@@ -169,11 +169,82 @@ namespace pub
 		auto stream = GetStream(vhost_app_name, stream_name);
 		if(stream != nullptr)
 		{
+			// If the stream exists but is not in a runnable state, treat it as missing and
+			// attempt a clean re-pull on demand (OriginMap-like behavior for REST-created
+			// persistent pulls).
+			if (stream->GetState() == Stream::State::ERROR || stream->GetState() == Stream::State::STOPPED)
+			{
+				auto orchestrator = ocst::Orchestrator::GetInstance();
+				auto url = stream->GetMediaSource();
+
+				logtw(
+					"Stream exists but is unhealthy (%s). Forcing re-pull: [%s/%s] url=%s",
+					(stream->GetState() == Stream::State::ERROR) ? "ERROR" : "STOPPED",
+					vhost_app_name.ToString().CStr(),
+					stream_name.CStr(),
+					url.CStr());
+
+				// Best-effort termination without blocking OriginMap auto pulls.
+				orchestrator->TerminateStream(vhost_app_name, stream_name, false);
+
+				if (url.IsEmpty() == false)
+				{
+					auto props = std::make_shared<pvd::PullStreamProperties>();
+					props->EnablePersistent(true);
+
+					auto repull_error = orchestrator->RequestPullStreamWithUrls(
+						request_from,
+						vhost_app_name,
+						stream_name,
+						{url},
+						0,
+						props);
+					if (repull_error == nullptr)
+					{
+						return GetStream(vhost_app_name, stream_name);
+					}
+
+					logtw("Re-pull failed for [%s/%s]: %s",
+						  vhost_app_name.ToString().CStr(),
+						  stream_name.CStr(),
+						  repull_error->What());
+				}
+
+				return nullptr;
+			}
+
 			return stream;
 		}
 
 		auto orchestrator = ocst::Orchestrator::GetInstance();
 		auto &vapp_name = vhost_app_name.ToString();
+
+		// REST-created persistent pull streams (OriginMap-like): if the runtime stream
+		// is missing (e.g., terminated on origin restart), re-pull on demand using the
+		// stored URL list.
+		if (auto rest_urls = orchestrator->GetRestPersistentPullUrls(vhost_app_name, stream_name); rest_urls.has_value())
+		{
+			auto props = std::make_shared<pvd::PullStreamProperties>();
+			props->EnablePersistent(true);
+			props->SetRetryCount(0);
+
+			logti("Try to pull stream from REST persistent pulls: [%s/%s]", vapp_name.CStr(), stream_name.CStr());
+			auto rest_error = orchestrator->RequestPullStreamWithUrls(
+				request_from,
+				vhost_app_name,
+				stream_name,
+				rest_urls.value(),
+				0,
+				props);
+			if (rest_error == nullptr)
+			{
+				return GetStream(vhost_app_name, stream_name);
+			}
+			logtw("Could not pull stream from REST persistent pulls [%s/%s]: %s",
+				  vapp_name.CStr(),
+				  stream_name.CStr(),
+				  rest_error->What());
+		}
 
 		// Pull stream with the local origin map
 		logti("Try to pull stream from local origin map: [%s/%s]", vapp_name.CStr(), stream_name.CStr());

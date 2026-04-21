@@ -13,6 +13,8 @@
 #include <base/publisher/publisher.h>
 #include <modules/http/http_error.h>
 
+#include <optional>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "virtual_host.h"
@@ -214,6 +216,7 @@ namespace ocst
 		
 		/// Release Pulled Stream
 		CommonErrorCode TerminateStream(const info::VHostAppName &vhost_app_name, const ov::String &stream_name);
+		CommonErrorCode TerminateStream(const info::VHostAppName &vhost_app_name, const ov::String &stream_name, bool mark_explicitly_deleted);
 
 		/// Find Provider from ProviderType
 		std::shared_ptr<pvd::Provider> GetProviderFromType(const ProviderType type);
@@ -234,6 +237,22 @@ namespace ocst
 		std::shared_ptr<ov::Url> GetOriginUrlFromOriginMapStore(const info::VHostAppName &vhost_app_name, const ov::String &stream_name) const;
 		CommonErrorCode RegisterStreamToOriginMapStore(const info::VHostAppName &vhost_app_name, const ov::String &stream_name);
 		CommonErrorCode UnregisterStreamFromOriginMapStore(const info::VHostAppName &vhost_app_name, const ov::String &stream_name);
+
+		// REST-created persistent pull definitions (OriginMap-like store).
+		// This stores stream name -> URL list even if the runtime stream instance
+		// is terminated due to origin failures.
+		void RegisterRestPersistentPull(
+			const info::VHostAppName &vhost_app_name,
+			const ov::String &stream_name,
+			const std::vector<ov::String> &url_list);
+		void UnregisterRestPersistentPull(
+			const info::VHostAppName &vhost_app_name,
+			const ov::String &stream_name);
+		std::optional<std::vector<ov::String>> GetRestPersistentPullUrls(
+			const info::VHostAppName &vhost_app_name,
+			const ov::String &stream_name) const;
+
+		std::vector<ov::String> ListRestPersistentPulls(const info::VHostAppName &vhost_app_name) const;
 
 		// Mirror Stream
 		bool CheckIfStreamExist(const info::VHostAppName &vhost_app_name, const ov::String &stream_name);
@@ -303,5 +322,9 @@ namespace ocst
 		// until it is created again via explicit pull request (POST /streams).
 		mutable std::shared_mutex _explicitly_deleted_streams_mutex;
 		std::unordered_set<ov::String> _explicitly_deleted_streams;
+
+		// REST persistent pulls must survive transient origin failures.
+		mutable std::shared_mutex _rest_persistent_pulls_mutex;
+		std::unordered_map<ov::String, std::vector<ov::String>> _rest_persistent_pulls;
 	};
 }  // namespace ocst

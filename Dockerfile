@@ -52,6 +52,7 @@ ARG     USE_GPU
 ARG     OME_VERSION=master
 ARG     USE_LOCAL=false
 ARG     STRIP=true
+ARG     OME_BUILD_JOBS=2
 
 ENV     PREFIX=/opt/ovenmediaengine
 ENV     TEMP_DIR=/tmp/ome
@@ -86,7 +87,7 @@ RUN \
         if [ "${USE_GPU}" = "true" ] || [ "${USE_GPU}" = "1" ] || [ "${USE_GPU}" = "yes" ]; then \
                 echo -e "/usr/local/cuda/compat\n/usr/local/cuda/lib64/stubs" | tee /etc/ld.so.conf.d/cuda.conf > /dev/null && ldconfig ; \
         fi && \
-        make -C ${TEMP_DIR}/src release -j$(nproc)
+        make -C ${TEMP_DIR}/src release -j${OME_BUILD_JOBS}
 
 RUN \
         if [ "${STRIP}" = "true" ] || [ "${STRIP}" = "1" ] || [ "${STRIP}" = "yes" ]; then \

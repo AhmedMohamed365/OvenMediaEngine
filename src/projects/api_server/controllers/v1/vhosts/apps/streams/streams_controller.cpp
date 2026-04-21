@@ -121,6 +121,14 @@ namespace api
 
 					if (error == nullptr)
 					{
+						// OriginMap-like behavior for REST-created persistent pull streams:
+						// keep the definition (name -> URL list) even if the runtime stream
+						// instance later terminates due to origin failures.
+						if (properties->IsPersistent())
+						{
+							orchestrator->RegisterRestPersistentPull(app->GetVHostAppName(), stream_name, request_urls);
+						}
+
 						std::vector<std::shared_ptr<mon::StreamMetrics>> output_streams;
 						stream = GetStream(app, stream_name, &output_streams);
 						if (stream == nullptr)
@@ -164,7 +172,9 @@ namespace api
 		{
 			Json::Value response = Json::arrayValue;
 
+			auto orchestrator = ocst::Orchestrator::GetInstance();
 			auto stream_list	 = app->GetStreamMetricsMap();
+			std::unordered_set<ov::String> names;
 
 			for (auto &item : stream_list)
 			{
@@ -172,8 +182,20 @@ namespace api
 
 				if (stream->GetLinkedInputStream() == nullptr)
 				{
-					response.append(stream->GetName().CStr());
+					names.insert(stream->GetName());
 				}
+			}
+
+			// Include REST persistent pull definitions even if the runtime stream instance
+			// is currently missing/terminated due to origin failures.
+			for (const auto &name : orchestrator->ListRestPersistentPulls(app->GetVHostAppName()))
+			{
+				names.insert(name);
+			}
+
+			for (const auto &name : names)
+			{
+				response.append(name.CStr());
 			}
 
 			return response;
@@ -256,6 +278,9 @@ namespace api
 			{
 				throw http::HttpError(http_code, "Could not terminate the stream");
 			}
+
+			// If it was a REST-created persistent pull definition, remove it as well.
+			orchestrator->UnregisterRestPersistentPull(app_name, stream_name);
 
 			// Best-effort cleanup: if OriginMapStore is enabled and the stream was registered,
 			// remove it so it won't be re-discovered via store.
