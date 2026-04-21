@@ -111,7 +111,7 @@ namespace ocst
 		{
 			if (kv.first.Left(prefix.GetLength()) == prefix)
 			{
-				result.push_back(kv.first.SubString(prefix.GetLength()));
+				result.push_back(kv.first.Substring(prefix.GetLength()));
 			}
 		}
 		return result;
