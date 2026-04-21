@@ -63,6 +63,32 @@ namespace ocst
 		}
 	}  // namespace
 
+	ov::String Orchestrator::MakeAppStreamKey(const info::VHostAppName &vhost_app_name, const ov::String &stream_name) const
+	{
+		return ov::String::FormatString("%s/%s", vhost_app_name.CStr(), stream_name.CStr());
+	}
+
+	bool Orchestrator::IsExplicitlyDeleted(const info::VHostAppName &vhost_app_name, const ov::String &stream_name) const
+	{
+		auto key = MakeAppStreamKey(vhost_app_name, stream_name);
+		std::shared_lock<std::shared_mutex> lock(_explicitly_deleted_streams_mutex);
+		return _explicitly_deleted_streams.find(key) != _explicitly_deleted_streams.end();
+	}
+
+	void Orchestrator::MarkExplicitlyDeleted(const info::VHostAppName &vhost_app_name, const ov::String &stream_name)
+	{
+		auto key = MakeAppStreamKey(vhost_app_name, stream_name);
+		std::lock_guard<std::shared_mutex> lock(_explicitly_deleted_streams_mutex);
+		_explicitly_deleted_streams.insert(key);
+	}
+
+	void Orchestrator::ClearExplicitlyDeleted(const info::VHostAppName &vhost_app_name, const ov::String &stream_name)
+	{
+		auto key = MakeAppStreamKey(vhost_app_name, stream_name);
+		std::lock_guard<std::shared_mutex> lock(_explicitly_deleted_streams_mutex);
+		_explicitly_deleted_streams.erase(key);
+	}
+
 	bool Orchestrator::StartServer(const std::shared_ptr<const cfg::Server> &server_config)
 	{
 		_server_config = server_config;
@@ -475,6 +501,9 @@ namespace ocst
 		const info::VHostAppName &vhost_app_name, const ov::String &stream_name,
 		const std::vector<ov::String> &url_list, off_t offset, const std::shared_ptr<pvd::PullStreamProperties> &properties)
 	{
+		// If the stream was explicitly deleted, allow explicit POST to recreate it.
+		ClearExplicitlyDeleted(vhost_app_name, stream_name);
+
 		ov::String scheme;
 
 		auto validation_error = ValidatePullStreamUrlList(url_list, &scheme);
@@ -551,6 +580,12 @@ namespace ocst
 		const info::VHostAppName &vhost_app_name, const ov::String &stream_name,
 		off_t offset)
 	{
+		// If a stream was explicitly deleted via REST API, do not auto re-pull it from OriginMap.
+		if (IsExplicitlyDeleted(vhost_app_name, stream_name))
+		{
+			return Error::CreateError(CommonErrorCode::NOT_FOUND, "Stream is explicitly deleted");
+		}
+
 		std::shared_ptr<PullProviderModuleInterface> provider_module;
 		auto app_info = info::Application::GetInvalidApplication();
 		std::vector<ov::String> url_list;
@@ -672,6 +707,9 @@ namespace ocst
 		{
 			return CommonErrorCode::ERROR;
 		}
+
+		// Prevent auto re-pull via OriginMap until explicitly created again.
+		MarkExplicitlyDeleted(vhost_app_name, stream_name);
 
 		return CommonErrorCode::SUCCESS;
 	}

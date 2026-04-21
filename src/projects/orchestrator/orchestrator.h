@@ -13,6 +13,8 @@
 #include <base/publisher/publisher.h>
 #include <modules/http/http_error.h>
 
+#include <unordered_set>
+
 #include "virtual_host.h"
 #include "module.h"
 
@@ -247,6 +249,11 @@ namespace ocst
 		bool OnStreamUpdated(const info::Application &app_info, const std::shared_ptr<info::Stream> &info) override;
 
 	private:
+		ov::String MakeAppStreamKey(const info::VHostAppName &vhost_app_name, const ov::String &stream_name) const;
+		bool IsExplicitlyDeleted(const info::VHostAppName &vhost_app_name, const ov::String &stream_name) const;
+		void MarkExplicitlyDeleted(const info::VHostAppName &vhost_app_name, const ov::String &stream_name);
+		void ClearExplicitlyDeleted(const info::VHostAppName &vhost_app_name, const ov::String &stream_name);
+
 		void DeleteUnusedDynamicApplications();
 
 		info::application_id_t GetNextAppId();
@@ -291,5 +298,10 @@ namespace ocst
 
 		// Module Timer : It is called periodically by the timer
 		ov::DelayQueue _timer{"Orchestrator"};
+
+		// If a stream is explicitly deleted via REST API, block auto re-pull via OriginMap
+		// until it is created again via explicit pull request (POST /streams).
+		mutable std::shared_mutex _explicitly_deleted_streams_mutex;
+		std::unordered_set<ov::String> _explicitly_deleted_streams;
 	};
 }  // namespace ocst

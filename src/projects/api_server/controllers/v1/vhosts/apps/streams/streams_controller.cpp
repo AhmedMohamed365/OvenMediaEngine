@@ -257,6 +257,11 @@ namespace api
 				throw http::HttpError(http_code, "Could not terminate the stream");
 			}
 
+			// Best-effort cleanup: if OriginMapStore is enabled and the stream was registered,
+			// remove it so it won't be re-discovered via store.
+			// Do not fail the DELETE if this cleanup fails.
+			orchestrator->UnregisterStreamFromOriginMapStore(app_name, stream_name);
+
 			return {http_code};
 		}
 	}  // namespace v1
