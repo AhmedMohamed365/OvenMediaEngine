@@ -334,4 +334,93 @@ namespace cfg
 			throw CreateConfigError("%s", description.CStr());
 		}
 	}
+
+	void ConfigManager::UpdateRestPullInXml(const ov::String& vhost_name, const ov::String& app_name, const ov::String& stream_name, const std::vector<ov::String>& url_list, bool is_add)
+	{
+		std::unique_lock lock(_config_mutex);
+		ov::String server_config_path = ov::PathManager::Combine(_config_path, CFG_MAIN_FILE_NAME);
+
+		pugi::xml_document doc;
+		pugi::xml_parse_result result = doc.load_file(server_config_path.CStr(), pugi::parse_default | pugi::parse_comments | pugi::parse_declaration);
+		if (!result)
+		{
+			logte("Failed to load Server.xml for updating REST pull: %s", result.description());
+			return;
+		}
+
+		pugi::xml_node server_node = doc.child("Server");
+		if (!server_node) return;
+
+		pugi::xml_node virtual_hosts = server_node.child("VirtualHosts");
+		if (!virtual_hosts) return;
+
+		for (pugi::xml_node vhost = virtual_hosts.child("VirtualHost"); vhost; vhost = vhost.next_sibling("VirtualHost"))
+		{
+			if (ov::String(vhost.child("Name").child_value()) == vhost_name)
+			{
+				pugi::xml_node origins = vhost.child("Origins");
+				if (!origins)
+				{
+					if (!is_add) break; // Nothing to remove
+					origins = vhost.append_child("Origins");
+				}
+
+				ov::String target_location = ov::String::FormatString("/%s/%s", app_name.CStr(), stream_name.CStr());
+
+				// Remove existing origin with this location
+				for (pugi::xml_node origin = origins.child("Origin"); origin; )
+				{
+					pugi::xml_node next = origin.next_sibling("Origin");
+					if (ov::String(origin.child("Location").child_value()) == target_location)
+					{
+						origins.remove_child(origin);
+					}
+					origin = next;
+				}
+
+				if (is_add)
+				{
+					// Add new origin
+					pugi::xml_node new_origin = origins.append_child("Origin");
+					new_origin.append_child("Location").text().set(target_location.CStr());
+					pugi::xml_node pass = new_origin.append_child("Pass");
+
+					ov::String scheme;
+					if (!url_list.empty())
+					{
+						// URL format is likely <scheme>://...
+						std::string first_url = url_list[0].CStr();
+						size_t scheme_end = first_url.find("://");
+						if (scheme_end != std::string::npos)
+						{
+							scheme = ov::String(first_url.substr(0, scheme_end).c_str()).LowerCaseString();
+						}
+					}
+
+					if (!scheme.IsEmpty())
+					{
+						pass.append_child("Scheme").text().set(scheme.CStr());
+					}
+
+					pugi::xml_node urls = pass.append_child("Urls");
+					for (const auto& url : url_list)
+					{
+						std::string url_str = url.CStr();
+						size_t scheme_end = url_str.find("://");
+						if (scheme_end != std::string::npos)
+						{
+							url_str = url_str.substr(scheme_end + 3);
+						}
+						urls.append_child("Url").text().set(url_str.c_str());
+					}
+				}
+
+				if (!doc.save_file(server_config_path.CStr(), "\t", pugi::format_default | pugi::format_save_file_text))
+				{
+					logte("Failed to save updated Server.xml to %s", server_config_path.CStr());
+				}
+				break;
+			}
+		}
+	}
 }  // namespace cfg

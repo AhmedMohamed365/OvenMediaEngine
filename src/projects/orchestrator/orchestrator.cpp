@@ -11,6 +11,7 @@
 #include <base/mediarouter/mediarouter_interface.h>
 #include <base/provider/pull_provider/stream_props.h>
 #include <base/provider/stream.h>
+#include <config/config_manager.h>
 #include <mediarouter/mediarouter.h>
 #include <monitoring/monitoring.h>
 
@@ -76,6 +77,8 @@ namespace ocst
 		auto key = MakeAppStreamKey(vhost_app_name, stream_name);
 		std::lock_guard<std::shared_mutex> lock(_rest_persistent_pulls_mutex);
 		_rest_persistent_pulls[key] = url_list;
+
+		cfg::ConfigManager::GetInstance()->UpdateRestPullInXml(vhost_app_name.GetVHostName(), vhost_app_name.GetAppName(), stream_name, url_list, true);
 	}
 
 	void Orchestrator::UnregisterRestPersistentPull(
@@ -85,6 +88,8 @@ namespace ocst
 		auto key = MakeAppStreamKey(vhost_app_name, stream_name);
 		std::lock_guard<std::shared_mutex> lock(_rest_persistent_pulls_mutex);
 		_rest_persistent_pulls.erase(key);
+
+		cfg::ConfigManager::GetInstance()->UpdateRestPullInXml(vhost_app_name.GetVHostName(), vhost_app_name.GetAppName(), stream_name, std::vector<ov::String>(), false);
 	}
 
 	std::optional<std::vector<ov::String>> Orchestrator::GetRestPersistentPullUrls(

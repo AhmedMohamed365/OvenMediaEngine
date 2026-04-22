@@ -42,6 +42,8 @@ namespace cfg
 			return _config_path;
 		}
 
+		void UpdateRestPullInXml(const ov::String& vhost_name, const ov::String& app_name, const ov::String& stream_name, const std::vector<ov::String>& url_list, bool is_add);
+
 	protected:
 		ConfigManager();
 
