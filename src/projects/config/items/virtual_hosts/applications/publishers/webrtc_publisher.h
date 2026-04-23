@@ -50,6 +50,7 @@ namespace cfg
 					CFG_DECLARE_CONST_REF_GETTER_OF(GetPlayoutDelay, _playout_delay)
 					CFG_DECLARE_CONST_REF_GETTER_OF(GetBandwidthEstimationType, _bandwidth_estimation_type)
 					CFG_DECLARE_CONST_REF_GETTER_OF(ShouldCreateDefaultPlaylist, _create_default_playlist)
+					CFG_DECLARE_CONST_REF_GETTER_OF(IsH265Enabled, _enable_h265)
 
 				protected:
 					void MakeList() override
@@ -62,6 +63,7 @@ namespace cfg
 						Register<Optional>("Ulpfec", &_ulpfec);
 						Register<Optional>("PlayoutDelay", &_playout_delay);
 						Register<Optional>("CreateDefaultPlaylist", &_create_default_playlist);
+						Register<Optional>("EnableH265", &_enable_h265);
 						Register<Optional>("BandwidthEstimation", &_bwe, [=]() -> std::shared_ptr<ConfigError> { return nullptr; }, [=]() -> std::shared_ptr<ConfigError> {
 								if (_bwe.UpperCaseString() == "REMB")
 								{
@@ -88,6 +90,9 @@ namespace cfg
 					bool _ulpfec		= false;
 					bool _jitter_buffer = false;
 					ov::String _bwe;
+					// true: include H.265/HEVC in WebRTC SDP offer (pass-through, no transcoding)
+					// false: do not offer H.265 (default, for backward compatibility)
+					bool _enable_h265 = false;
 
 					RtcBWEType _bandwidth_estimation_type = RtcBWEType::All;
 					PlayoutDelay _playout_delay;

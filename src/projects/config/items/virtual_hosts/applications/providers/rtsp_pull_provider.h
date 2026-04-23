@@ -26,6 +26,7 @@ namespace cfg
 					}
 
 					CFG_DECLARE_CONST_REF_GETTER_OF(IsBlockDuplicateStreamName, _is_block_duplicate_stream_name)
+					CFG_DECLARE_CONST_REF_GETTER_OF(IsAcceptH265, _accept_h265)
 
 				protected:
 					void MakeList() override
@@ -33,11 +34,15 @@ namespace cfg
 						Provider::MakeList();
 
 						Register<Optional>("BlockDuplicateStreamName", &_is_block_duplicate_stream_name);
+						Register<Optional>("AcceptH265", &_accept_h265);
 					}
 
 					// true: block(disconnect) new incoming stream
 					// false: don't block new incoming stream
 					bool _is_block_duplicate_stream_name = true;
+					// true: accept H.265/HEVC streams from RTSP pull
+					// false: reject H.265/HEVC streams (default, for backward compatibility)
+					bool _accept_h265 = false;
 				};
 			}  // namespace pvd
 		}  // namespace app
